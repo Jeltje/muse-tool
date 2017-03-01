@@ -18,6 +18,15 @@ def which(cmd):
     if len(res) == 0: return None
     return res
 
+def gunzip(infile, outfile):
+    cmd = (' ').join(['zcat', infile])
+    with open(outfile, 'w') as outF:
+        p = subprocess.Popen(cmd, shell=True, stdout=outF, stderr=subprocess.PIPE)
+    stdout,stderr =  p.communicate()
+    if len(stderr):
+        print "unzip command failed:", stderr
+        raise Exception("unzip failed")
+
 def fai_chunk(path, blocksize):
     seq_map = {}
     with open( path ) as handle:
@@ -77,8 +86,13 @@ def run_muse(args):
         args.muse = which(args.muse)
 
     workdir = os.path.abspath(tempfile.mkdtemp(dir=args.workdir, prefix="muse_work_"))
+    if args.f.endswith('.gz'):
+        new_ref = os.path.join(workdir, "ref_genome.fasta")
+        gunzip(args.f, new_ref)
+        subprocess.check_call( ["/usr/bin/samtools", "faidx", new_ref] )
+        args.f = new_ref
 
-    if not os.path.exists(args.f + ".fai"):
+    elif not os.path.exists(args.f + ".fai"):
         new_ref = os.path.join(workdir, "ref_genome.fasta")
         os.symlink(os.path.abspath(args.f),new_ref)
         subprocess.check_call( ["/usr/bin/samtools", "faidx", new_ref] )
@@ -132,11 +146,14 @@ def run_muse(args):
             first = False
             if not args.no_clean:
                 os.unlink(out)
-
     dbsnp_file = None
     if args.D:
         new_dbsnp = os.path.join(workdir, "db_snp.vcf")
-        os.symlink(args.D,new_dbsnp)
+        if args.D.endswith('.gz'):
+            print "unzipping SNP file..."
+            gunzip(args.D, new_dbsnp)
+        else:
+            os.symlink(args.D,new_dbsnp)
         subprocess.check_call( ["/usr/bin/bgzip", new_dbsnp] )
         subprocess.check_call( ["/usr/bin/tabix", "-p", "vcf", new_dbsnp + ".gz" ])
         dbsnp_file = new_dbsnp + ".gz"
